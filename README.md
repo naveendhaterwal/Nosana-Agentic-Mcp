@@ -102,15 +102,6 @@ Add this to your `claude_desktop_config.json`:
 
 ---
 
-## 🗺️ Roadmap: The Path to 50k Deployments
-
-- **Months 1-3**: Bulletproof core logic and "Host LLaMA in 60s" tutorials.
-- **Months 4-6**: No-code drag-and-drop web interface for non-technical founders.
-- **Months 7-9**: Template Marketplace (Whisper, Stable Diffusion, RAG-in-a-box).
-- **Months 10-12**: Community templates, auto-scaling, and "Savings vs AWS" analytics.
-
----
-
 ## 👨‍💻 Author
 **Naveen Kumar** - Freelance Full-Stack & ML Developer
 > "Building the bridges I wish I had when I was frustrated by AWS bills."
