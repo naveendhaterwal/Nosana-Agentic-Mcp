@@ -1,5 +1,9 @@
 # 🚀 Nosana Agentic MCP
 
+
+> [!NOTE]
+> **MVP Status**: This is an early MVP showcasing the core functionality of the Nosana Agentic MCP. More features, optimizations, and tools are on the way!
+
 ![Nosana Agentic MCP Banner](assets/banner.png)
 
 > **85% cheaper than AWS. As easy as Vercel. The human-centered bridge to decentralized GPU power.**
