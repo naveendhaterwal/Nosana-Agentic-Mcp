@@ -1,7 +1,0 @@
-{
-  "entries": [
-    { "path": "skills/nosana-deployer" },
-    { "path": "skills/nosana-monitor" },
-    { "path": "skills/nosana-doctor" }
-  ]
-}
