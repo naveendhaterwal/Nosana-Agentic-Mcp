@@ -1,2 +1,6 @@
 main/
 agent-skills/
+node_modules
+dist
+build
+.env
