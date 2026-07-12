@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.nosana.dashboard.twa",
+        "sha256_cert_fingerprints": ["AD:2C:44:BE:DD:3D:C7:2F:75:FB:B4:E9:1E:C1:AD:B0:CF:FF:8E:27:AA:F4:04:F3:04:55:42:82:78:D8:EE:EF"]
+      }
+    }]

@@ -1,0 +1,661 @@
+<template>
+  <div>
+    <NuxtPage v-if="$route.params.jobaddress" />
+    <template v-else>
+      <TopBar
+        title="Deployment Overview"
+        subtitle="Find information about and manage your deployment here."
+      />
+
+      <Loader v-if="loading" />
+      <div v-else-if="error" class="box">
+        <div class="notification is-danger">
+          <p>{{ error }}</p>
+        </div>
+      </div>
+
+      <div v-else-if="deployment">
+        <!-- Unified Card -->
+        <div class="box is-borderless">
+          <!-- Header Section -->
+          <DeploymentHeader
+            :deployment="deployment"
+            :activeTab="activeTab"
+            :availableTabs="availableTabs"
+            :actionLoading="actionLoading"
+            :canStart="canStart"
+            :canStop="canStop"
+            :canArchive="canArchive"
+            :hasAnyActions="hasAnyActions"
+            :hasVault="hasVault"
+            :deploymentVault="deploymentVault"
+            @switchTab="switchTab"
+            @action="switchAction"
+            @rename="updateName"
+            @navigateBack="router.push('/deployments')"
+          />
+
+          <!-- Tab Content -->
+          <div class="p-5">
+            <!-- Overview Tab -->
+            <div v-if="activeTab === 'overview'">
+              <DeploymentErrorBanner
+                :hasErrorInLastEvent="hasErrorInLastEvent"
+                @viewEvents="switchTab('events')"
+              />
+
+              <DeploymentDetails
+                :deployment="deployment"
+                :hasVault="hasVault"
+                :deploymentVault="deploymentVault"
+                :deploymentSchedule="deploymentSchedule"
+                :testgridMarkets="testgridMarkets || []"
+              />
+
+              <DeploymentEndpoints
+                :endpoints="deploymentEndpoints"
+                :isActiveOrStarting="
+                  deployment.status === 'RUNNING' ||
+                  deployment.status === 'STARTING'
+                "
+              />
+
+              <DeploymentJobActivity
+                :deploymentId="deployment.id"
+                :deploymentStatus="deployment.status"
+                :jobActivityTab="jobActivityTab"
+                :activeJobs="activeJobsPaged"
+                :activeLoading="activeLoading"
+                :activeHasPrev="activeHasPrev"
+                :activeHasNext="activeHasNext"
+                :historyJobs="historyJobs"
+                :historyLoading="historyLoading"
+                :historyHasPrev="historyHasPrev"
+                :historyHasNext="historyHasNext"
+                :getJobStateNumber="getJobStateNumber"
+                :getJobDuration="getJobDuration"
+                @update:jobActivityTab="jobActivityTab = $event"
+                @active:prev="activePrev"
+                @active:next="activeNext"
+                @history:prev="historyPrev"
+                @history:next="historyNext"
+              />
+            </div>
+
+            <!-- Events Tab -->
+            <div v-if="activeTab === 'events'">
+              <DeploymentUpcomingTasks
+                :tasks="tasks"
+                :tasksLoading="tasksLoading"
+                @refresh="loadTasks()"
+              />
+
+              <DeploymentEventHistory :events="deploymentEvents" />
+            </div>
+
+            <!-- Logs Tab -->
+            <div v-if="activeTab === 'logs'">
+              <DeploymentLogCollector
+                :deploymentId="deployment.id"
+                :jobs="deploymentJobs"
+              />
+            </div>
+
+            <!-- Configuration Tab -->
+            <div v-if="activeTab === 'configuration'">
+              <DeploymentJobDefinitionEditor
+                ref="jobDefEditorComponent"
+                :jobDefinitionModel="jobDefinitionModel"
+                :loadingJobDefinition="loadingJobDefinition"
+                :hasDefinitionChanged="hasDefinitionChanged"
+                @update:jobDefinitionModel="jobDefinitionModel = $event"
+                @reset="resetDefinition"
+                @makeRevision="makeRevision"
+              />
+
+              <DeploymentRevisions
+                :revisions="sortedRevisions"
+                :activeRevision="deployment.active_revision"
+                :switchingRevision="switchingRevision"
+                :actionLoading="actionLoading"
+                @switchToRevision="switchToRevision"
+                @viewRevision="viewRevisionDefinition"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modals -->
+      <template v-if="deployment">
+        <DeploymentReplicasModal
+          v-model="showReplicasModal"
+          v-model:replicaCount="newReplicaCount"
+          :currentReplicas="deployment.replicas"
+          :actionLoading="actionLoading"
+          @confirm="updateReplicas()"
+        />
+
+        <DeploymentTimeoutModal
+          v-model="showTimeoutModal"
+          v-model:timeoutHours="newTimeoutHours"
+          :currentTimeoutDisplay="(deployment.timeout / 60).toFixed(2)"
+          :actionLoading="actionLoading"
+          @confirm="updateJobTimeout()"
+        />
+
+        <DeploymentScheduleModal
+          v-model="showScheduleModal"
+          v-model:schedule="newSchedule"
+          :currentSchedule="deploymentSchedule"
+          :actionLoading="actionLoading"
+          :isValidCronExpression="isValidCronExpression"
+          @confirm="updateSchedule()"
+        />
+
+        <DeploymentRevisionModal
+          v-model="showRevisionModal"
+          v-model:definition="revisionJobDefinition"
+          ref="revisionModalComponent"
+          :actionLoading="actionLoading"
+          @confirm="createRevision(canSaveRevision)"
+        />
+
+        <DeploymentRevisionViewModal
+          v-model="showRevisionDefinitionModal"
+          :revision="viewingRevision"
+        />
+      </template>
+    </template>
+  </div>
+  <VaultModal />
+</template>
+
+<script setup lang="ts">
+import type { JobDefinition } from "@nosana/kit";
+import { useVaultModal } from "~/composables/useVaultModal";
+import { updateVaultBalance } from "~/composables/useDeploymentVault";
+import { useWallet } from "@nosana/solana-vue";
+import { useSuperTokens } from "~/composables/useSuperTokens";
+import { useDeploymentDetail } from "~/composables/useDeploymentDetail";
+import { useDeploymentJobs } from "~/composables/useDeploymentJobs";
+import { useDeploymentActions } from "~/composables/useDeploymentActions";
+import { useDeploymentPolling } from "~/composables/useDeploymentPolling";
+import { useDeploymentJobDefinition } from "~/composables/useDeploymentJobDefinition";
+import VaultModal from "~/components/Vault/Modal/VaultModal.vue";
+
+// --- Auth setup ---
+const route = useRoute();
+const router = useRouter();
+const { open: openVaultModal, state: vaultModalState } = useVaultModal();
+const { isAuthenticated: superTokensAuth } = useSuperTokens();
+const { connected, account } = useWallet();
+
+const isAuthenticated = computed(() => superTokensAuth.value);
+const isWalletMode = computed(
+  () => connected.value && account.value?.address && !superTokensAuth.value,
+);
+const hasAnyAuth = computed(() => isAuthenticated.value || isWalletMode.value);
+
+// --- Tab state ---
+const activeTab = ref("overview");
+const availableTabs = computed(() => {
+  return ["overview", "logs", "events", "configuration"];
+});
+
+// Initialize activeTab from URL query parameter
+const initialTab = route.query.tab?.toString();
+if (
+  initialTab &&
+  ["overview", "logs", "events", "configuration"].includes(initialTab)
+) {
+  activeTab.value = initialTab;
+}
+
+// --- Composables ---
+const detail = useDeploymentDetail({
+  hasAnyAuth,
+  isWalletMode,
+  activeTab,
+});
+
+const {
+  deployment,
+  loading,
+  error,
+  deploymentJobs,
+  deploymentEventsData,
+  deploymentRevisions,
+  tasks,
+  tasksLoading,
+  jobStates,
+  allJobsData,
+  jobStateStringToNumber,
+  deploymentStatus,
+  hasVault,
+  deploymentVault,
+  deploymentSchedule,
+  hasActiveJobs,
+  loadDeployment,
+  loadJobs,
+  loadEvents,
+  loadTasks,
+} = detail;
+
+const jobs = useDeploymentJobs({
+  deployment,
+  deploymentJobs,
+  deploymentEventsData,
+  jobStates,
+  allJobsData,
+  jobStateStringToNumber,
+});
+
+const {
+  jobActivityTab,
+  getJobDuration,
+  getJobStateNumber,
+  activeJobsPaged,
+  activeLoading,
+  activeHasPrev,
+  activeHasNext,
+  activeNext,
+  activePrev,
+  refreshActiveJobs,
+  historyJobs,
+  historyLoading,
+  historyHasPrev,
+  historyHasNext,
+  historyNext,
+  historyPrev,
+  deploymentEndpoints,
+  deploymentEvents,
+  hasErrorInLastEvent,
+} = jobs;
+
+// Each poll refreshes deploymentJobs (logs/maps/hasActiveJobs) AND the full
+// active set that powers the Active tab and the running-job timer. Guard the
+// first await so refreshActiveJobs always runs even if loadJobs ever throws.
+const pollLoadJobs = async (silent?: boolean) => {
+  await loadJobs(silent).catch(() => {});
+  await refreshActiveJobs();
+};
+
+const polling = useDeploymentPolling({
+  deployment,
+  activeTab,
+  hasActiveJobs,
+  loadDeployment,
+  loadJobs: pollLoadJobs,
+  loadEvents,
+  loadTasks,
+});
+
+const {
+  pollingTimeout,
+  stopAllPolling,
+  startUnifiedPolling,
+  startFastPolling,
+  stopJobPolling,
+} = polling;
+
+const actions = useDeploymentActions({
+  deployment,
+  hasAnyAuth,
+  isWalletMode,
+  deploymentStatus,
+  hasActiveJobs,
+  loadDeployment,
+  startFastPolling,
+  stopJobPolling,
+});
+
+const {
+  actionLoading,
+  showReplicasModal,
+  showTimeoutModal,
+  showScheduleModal,
+  showRevisionModal,
+  showRevisionDefinitionModal,
+  newReplicaCount,
+  newTimeoutHours,
+  newSchedule,
+  revisionJobDefinition,
+  switchingRevision,
+  viewingRevision,
+  canStart,
+  canStop,
+  canArchive,
+  hasAnyActions,
+  startDeployment,
+  stopDeployment,
+  archiveDeployment,
+  updateName,
+  updateReplicas,
+  updateJobTimeout,
+  updateSchedule,
+  createRevision,
+  switchToRevision,
+  viewRevisionDefinition,
+  isValidCronExpression,
+} = actions;
+
+const jobDef = useDeploymentJobDefinition({
+  deployment,
+  deploymentRevisions,
+  actionLoading,
+  loadDeployment,
+});
+
+const {
+  jobDefinitionModel,
+  loadingJobDefinition,
+  canSaveRevision,
+  loadJobDefinition,
+  hasDefinitionChanged,
+  resetDefinition,
+  makeRevision,
+} = jobDef;
+
+// Wire up the circular dependency: loadDeployment needs loadJobDefinition
+detail.setLoadJobDefinition(loadJobDefinition);
+
+// --- Remaining page-level state ---
+const { data: testgridMarkets } = useAPI("/api/markets", { default: () => [] });
+
+// Component refs for editor validation wiring
+const jobDefEditorComponent = ref<any>(null);
+const revisionModalComponent = ref<any>(null);
+
+// Wire editor refs from child components to job definition composable
+watch(
+  () => jobDefEditorComponent.value?.editorRef,
+  (editorRef: any) => {
+    if (editorRef) {
+      jobDef.currentJobDefEditor.value = editorRef;
+    }
+  },
+);
+
+watch(
+  () => revisionModalComponent.value?.editorRef,
+  (editorRef: any) => {
+    if (editorRef) {
+      jobDef.revisionJobDefEditor.value = editorRef;
+    }
+  },
+);
+
+// Available actions for URL-based modal opening
+const availableActions = [
+  "create-revision",
+  "update-replicas",
+  "update-timeout",
+  "update-schedule",
+  "topup",
+  "withdraw",
+];
+
+// Initialize action from URL query parameter
+const initialAction = route.query.action?.toString();
+if (initialAction && availableActions.includes(initialAction)) {
+  if (initialAction === "create-revision") showRevisionModal.value = true;
+  else if (initialAction === "update-replicas") showReplicasModal.value = true;
+  else if (initialAction === "update-timeout") showTimeoutModal.value = true;
+  else if (initialAction === "update-schedule") showScheduleModal.value = true;
+}
+
+// --- Formatters ---
+const sortedRevisions = computed(() => {
+  return deploymentRevisions.value || [];
+});
+
+// --- Auto-start DRAFT deployments ---
+const autostartTriggered = ref(false);
+watch(
+  () => deployment.value?.status,
+  async (status) => {
+    if (
+      status === "DRAFT" &&
+      !autostartTriggered.value &&
+      hasAnyAuth.value &&
+      !actionLoading.value &&
+      !isWalletMode.value
+    ) {
+      autostartTriggered.value = true;
+      try {
+        await startDeployment();
+      } catch (e) {
+        // ignore; actions already handle toasts
+      }
+    }
+  },
+  { immediate: true },
+);
+
+// Re-load the parent deployment when returning from a job subroute.
+// loadDeployment() intentionally early-returns while on a job subroute, so
+// navigating back to the deployment overview (browser back or the in-app back
+// button) can leave `deployment` null with loading=false -> blank screen.
+// Refetch when the subroute is exited and we don't already have the deployment.
+watch(
+  () => route.params.jobaddress,
+  (jobaddress, prevJobaddress) => {
+    if (
+      !jobaddress &&
+      prevJobaddress &&
+      hasAnyAuth.value &&
+      !deployment.value
+    ) {
+      loadDeployment();
+    }
+  },
+);
+
+// --- Auth timeout cleanup ---
+let authTimeout: NodeJS.Timeout | null = null;
+
+onUnmounted(() => {
+  if (authTimeout) {
+    clearTimeout(authTimeout);
+    authTimeout = null;
+  }
+});
+
+onBeforeRouteLeave(() => {
+  stopAllPolling();
+});
+
+// --- Watchers ---
+
+
+// Debounced authentication watcher
+watch(
+  hasAnyAuth,
+  (authed) => {
+    if (authTimeout) {
+      clearTimeout(authTimeout);
+    }
+
+    if (authed) {
+      if (
+        error.value === "Please log in or connect wallet to view deployments"
+      ) {
+        error.value = null;
+      }
+      if (!deployment.value) {
+        loadDeployment();
+      }
+      return;
+    }
+
+    authTimeout = setTimeout(() => {
+      if (!hasAnyAuth.value) {
+        if (!deployment.value) {
+          error.value = "Please log in or connect wallet to view deployments";
+        }
+      }
+    }, 2000);
+  },
+  { immediate: true },
+);
+
+// Watch deployment status to manage polling
+const prevDeploymentStatus = ref<string | null>(null);
+
+watch(
+  () => deployment.value?.status,
+  (newStatus) => {
+    if (!newStatus) return;
+
+    const status = newStatus.toUpperCase();
+    const prev = prevDeploymentStatus.value;
+
+    if (status === "RUNNING" && prev !== "RUNNING") {
+      const expectedStatus =
+        prev && prev !== "STARTING" && prev !== "RUNNING"
+          ? "RUNNING"
+          : undefined;
+      startFastPolling(expectedStatus);
+    } else if (
+      (status === "STARTING" || status === "RUNNING") &&
+      !pollingTimeout.value
+    ) {
+      startUnifiedPolling();
+    }
+
+    if (
+      ["STOPPED", "ARCHIVED", "ERROR"].includes(status) &&
+      !hasActiveJobs.value
+    ) {
+      stopAllPolling();
+    }
+
+    prevDeploymentStatus.value = status;
+  },
+  { immediate: true },
+);
+
+// --- Tab & action URL sync ---
+const switchTab = (tab: string) => {
+  activeTab.value = tab;
+  if (tab === "events") {
+    loadEvents(true);
+    loadTasks(true);
+  }
+  router.replace({
+    query: {
+      ...route.query,
+      tab: tab === "overview" ? undefined : tab,
+    },
+  });
+};
+
+const switchAction = (action: string) => {
+  if (action === "start") {
+    startDeployment();
+    return;
+  }
+  if (action === "stop") {
+    stopDeployment();
+    return;
+  }
+  if (action === "archive") {
+    archiveDeployment();
+    return;
+  }
+  if (action === "create-revision") showRevisionModal.value = true;
+  else if (action === "update-replicas") showReplicasModal.value = true;
+  else if (action === "update-timeout") showTimeoutModal.value = true;
+  else if (action === "update-schedule") showScheduleModal.value = true;
+  else if (action === "topup" && deploymentVault.value) {
+    openVaultModal(deploymentVault.value, "topup", () =>
+      updateVaultBalance(deploymentVault.value!),
+    );
+  } else if (action === "withdraw" && deploymentVault.value) {
+    openVaultModal(deploymentVault.value, "withdraw", () =>
+      updateVaultBalance(deploymentVault.value!),
+    );
+  }
+
+  router.replace({
+    query: {
+      ...route.query,
+      action,
+    },
+  });
+};
+
+const clearAction = () => {
+  if (route.query.action) {
+    const { action, ...query } = route.query;
+    router.replace({ query });
+  }
+};
+
+// --- Modal watchers ---
+watch(
+  [() => showRevisionModal.value, () => jobDefinitionModel.value],
+  ([isOpen, definition]) => {
+    if (isOpen && definition && !revisionJobDefinition.value) {
+      revisionJobDefinition.value = JSON.parse(JSON.stringify(definition));
+    }
+    if (!isOpen) {
+      revisionJobDefinition.value = null;
+      if (route.query.action === "create-revision") {
+        clearAction();
+      }
+    }
+  },
+);
+
+watch(showReplicasModal, (isOpen) => {
+  if (!isOpen && route.query.action === "update-replicas") clearAction();
+});
+
+watch(showTimeoutModal, (isOpen) => {
+  if (!isOpen && route.query.action === "update-timeout") clearAction();
+});
+
+watch(showScheduleModal, (isOpen) => {
+  if (!isOpen && route.query.action === "update-schedule") clearAction();
+});
+
+watch(
+  deploymentVault,
+  (vault) => {
+    const action = route.query.action?.toString();
+    if (
+      vault &&
+      (action === "topup" || action === "withdraw") &&
+      !vaultModalState.value.modalType
+    ) {
+      openVaultModal(vault, action, () => updateVaultBalance(vault));
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => vaultModalState.value.modalType,
+  (modalType) => {
+    if (
+      !modalType &&
+      (route.query.action === "topup" || route.query.action === "withdraw")
+    ) {
+      clearAction();
+    }
+  },
+);
+
+// Head
+useHead({
+  title: computed(() =>
+    deployment.value
+      ? `${deployment.value.name} - Deployment`
+      : "Loading Deployment",
+  ),
+});
+</script>
+
+<style lang="scss" scoped></style>
