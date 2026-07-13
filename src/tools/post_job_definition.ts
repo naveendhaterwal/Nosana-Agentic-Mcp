@@ -8,7 +8,7 @@ import { getNosanaClient } from "../nosana/client.js";
 export async function postJobDefinition(
   jobDefinitionJson: string, 
   marketAddress: string, 
-  timeout: number = 60,
+  timeout: number = 1,
   name: string = "Generic App Job",
   strategy: string = "SIMPLE"
 ) {
@@ -35,7 +35,7 @@ export async function postJobDefinition(
       name: name,
       market: marketAddress,
       replicas: 1, 
-      timeout: Math.max(timeout, 15),
+      timeout: Math.max(Math.floor(timeout * 3600), 15),
       strategy: strategy, 
       job_definition: jobDefinition
     };

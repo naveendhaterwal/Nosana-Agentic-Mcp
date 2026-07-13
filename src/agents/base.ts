@@ -79,7 +79,7 @@ export abstract class BaseAgent {
     zodSchema: z.ZodType<T>,
     handler: ToolHandler<T>
   ): void {
-    const fullName = `${this.name}.${shortName}`;
+    const fullName = `${this.name}-${shortName}`;
     const rawSchema = zodToJsonSchema(zodSchema);
     // zodToJsonSchema might return the schema wrapped or with $schema. 
     // We just need the type and properties for MCP.

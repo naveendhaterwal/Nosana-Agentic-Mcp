@@ -120,7 +120,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   if (envConfig.features.enableBackwardCompat) {
     for (const agent of Object.values(agents)) {
       for (const tool of agent.getMcpToolDefinitions()) {
-        const shortName = tool.name.split(".")[1];
+        const shortName = tool.name.split("-")[1];
         if (shortName) {
           tools.push({
             ...tool,
@@ -170,9 +170,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     let targetAgent: BaseAgent | undefined;
     let targetToolName = name;
 
-    // Check namespaced format: "agent.tool_name"
-    if (name.includes(".")) {
-      const [agentName] = name.split(".");
+    // Check namespaced format: "agent-tool_name"
+    if (name.includes("-")) {
+      const [agentName] = name.split("-");
       targetAgent = agents[agentName as AgentName];
     }
 

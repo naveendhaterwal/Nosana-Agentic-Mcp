@@ -30,11 +30,14 @@ Your expertise:
 - Verifying deployments are live and reachable
 
 Guidelines:
-- ALWAYS call analyst.get_deployment_options first to get user's GPU and duration preferences
-- Never deploy without explicit user confirmation of GPU tier and duration
-- For ML models, verify VRAM requirements match the selected market
-- Monitor deployment status after submission and report the live URL
-- If deployment fails, hand off to the Debug Doctor agent for diagnosis`;
+- When a user asks to deploy a project, you MUST follow this exact sequence:
+  1. List available GPU options (use get_gpu_markets) and recommend the best one for their specific project.
+  2. Ask which kind of deployment strategy they want to use (SIMPLE, INFINITE, SIMPLE-EXTEND).
+  3. Ask how long they want to deploy for. IMPORTANT: You must ALWAYS ask for and deal with the timeout in HOURS only (e.g., 2 hours, 0.5 hours).
+- NEVER deploy without explicit user confirmation of the GPU tier, strategy, and timeout.
+- For ML models, verify VRAM requirements match the selected market.
+- Monitor deployment status after submission and report the live URL.
+- If deployment fails, hand off to the Debug Doctor agent for diagnosis.`;
 
   init(): void {
     // ── post_job ─────────────────────────────────────────────────────────
@@ -46,7 +49,7 @@ Guidelines:
         marketAddress: z.string().describe("Target GPU market address"),
         name: z.string().optional().describe("Deployment name"),
         strategy: z.enum(["SIMPLE", "SIMPLE-EXTEND", "INFINITE"]).optional().describe("Deployment strategy (default: SIMPLE)"),
-        timeout: z.number().optional().describe("Timeout in minutes (default: 60)"),
+        timeout: z.number().optional().describe("Timeout in HOURS (e.g., 2.0). The system will convert this internally."),
       }),
       async (args) => {
         const raw = await postJobDefinition(
@@ -72,7 +75,7 @@ Guidelines:
         name: z.string().optional().describe("Deployment name"),
         replicas: z.number().optional().describe("Number of parallel GPU instances (default 1)"),
         strategy: z.string().optional().describe("Deployment strategy (default SIMPLE)"),
-        timeout: z.number().describe("Max execution time in minutes"),
+        timeout: z.number().describe("Timeout in HOURS (e.g., 2.0). The system will convert this internally."),
       }),
       async (args) => {
         const raw = await deployModel(

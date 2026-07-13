@@ -110,7 +110,7 @@ export async function deployModel(
       name: name,
       market: marketAddress,
       replicas: replicas,
-      timeout: strategy === "INFINITE" ? Math.max(timeout, 60) : Math.max(timeout, 1),
+      timeout: strategy === "INFINITE" ? Math.max(Math.floor(timeout * 3600), 60) : Math.max(Math.floor(timeout * 3600), 1),
       strategy: strategy,
       job_definition: jobDefinition
     };
