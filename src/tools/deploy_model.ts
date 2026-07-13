@@ -51,23 +51,8 @@ export async function deployModel(
   // --- PRE-FLIGHT CHECKS ---
   try {
     const market = await client.api.markets.get(marketAddress);
-    
-    // Check if market restricts images
-    if (market.required_images && market.required_images.length > 0) {
-      const isAllowed = market.required_images.some((img: string) => baseImage.includes(img) || img.includes(baseImage));
-      if (!isAllowed) {
-        return JSON.stringify({
-          success: false,
-          error: `🚫 Deployment Rejected: Restricted Market`,
-          details: `The market '${market.name}' only allows specific pre-approved images.`,
-          allowedImages: market.required_images,
-          yourImage: baseImage,
-          hint: "Pick an '🔓 Open Market' from get_gpu_options if you want to use a custom image like python:3.13-slim."
-        }, null, 2);
-      }
-    }
   } catch (err: any) {
-    console.warn(`Could not verify market policy: ${err.message}`);
+    console.warn(`Could not verify market: ${err.message}`);
   }
 
   // 1. Build SDK-Compliant Job Definition
@@ -110,7 +95,7 @@ export async function deployModel(
       name: name,
       market: marketAddress,
       replicas: replicas,
-      timeout: strategy === "INFINITE" ? Math.max(Math.floor(timeout * 3600), 60) : Math.max(Math.floor(timeout * 3600), 1),
+      timeout: strategy === "INFINITE" ? Math.max(Math.floor(timeout * 60), 60) : Math.max(Math.floor(timeout * 60), 1),
       strategy: strategy,
       job_definition: jobDefinition
     };

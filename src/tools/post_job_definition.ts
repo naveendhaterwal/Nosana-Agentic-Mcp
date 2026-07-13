@@ -35,7 +35,7 @@ export async function postJobDefinition(
       name: name,
       market: marketAddress,
       replicas: 1, 
-      timeout: Math.max(Math.floor(timeout * 3600), 15),
+      timeout: Math.max(Math.floor(timeout * 60), 15),
       strategy: strategy, 
       job_definition: jobDefinition
     };

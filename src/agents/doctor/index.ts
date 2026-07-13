@@ -118,15 +118,15 @@ Guidelines:
     // ── update_timeout ───────────────────────────────────────────────────
     this.registerTool(
       "update_timeout",
-      "Update the execution timeout (in minutes) for a deployment.",
+      "Update the execution timeout (in HOURS) for a deployment.",
       z.object({
-        deploymentId: z.string().describe("The deployment ID"),
-        timeoutMinutes: z.number().describe("New timeout in minutes"),
+        deploymentId: z.string().describe("Deployment ID"),
+        timeoutHours: z.number().describe("New timeout in HOURS (e.g., 1.0)"),
       }),
       async (args) => {
         const raw = await updateTimeout(
           args.deploymentId,
-          args.timeoutMinutes
+          args.timeoutHours
         );
         return JSON.parse(raw);
       }

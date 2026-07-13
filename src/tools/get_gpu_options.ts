@@ -7,7 +7,6 @@ interface GpuMarket {
   memoryGb: number;
   queueLength?: number;
   depth: "FLEET" | "SCARCE" | "UNKNOWN";
-  requiredImages: string[];
 }
 
 function getFleetDepth(name: string): "FLEET" | "SCARCE" | "UNKNOWN" {
@@ -42,8 +41,7 @@ export async function getGpuOptions(recommendedVram?: number) {
       address: m.address,
       priceUsdHr: m.usd_reward_per_hour || 0,
       memoryGb: m.lowest_vram || 8,
-      depth: getFleetDepth(m.name || m.slug || ""),
-      requiredImages: m.required_images || []
+      depth: getFleetDepth(m.name || m.slug || "")
     }));
     
     if (markets.length === 0) {
@@ -91,8 +89,6 @@ export async function getGpuOptions(recommendedVram?: number) {
       : (isCompatible ? "⚪ Scan Pending..." : "---");
 
     const capacityStr = m.depth === "FLEET" ? "Deep Fleet (High Capacity)" : "Scarce (Limited Hosts)";
-    const isOpen = !m.requiredImages || m.requiredImages.length === 0;
-    const policy = isOpen ? "🔓 Open (Any Image)" : "🔒 Restricted (Pre-Approved Images Only)";
 
     if (m.address === recommended.address) {
       tag = " ⭐ Instant Deploy";
@@ -100,7 +96,7 @@ export async function getGpuOptions(recommendedVram?: number) {
       tag = " ⚠️ Not enough VRAM";
     }
     
-    return `${i + 1}. ${m.name.padEnd(25)} | ${m.memoryGb}GB | $${m.priceUsdHr.toFixed(3)}/hr | ${traffic.padEnd(12)} | ${m.address}${tag}\n   └─ Capacity: ${capacityStr}\n   └─ Policy: ${policy}`;
+    return `${i + 1}. ${m.name.padEnd(25)} | ${m.memoryGb}GB | $${m.priceUsdHr.toFixed(3)}/hr | ${traffic.padEnd(12)} | ${m.address}${tag}\n   └─ Capacity: ${capacityStr}`;
   }).join("\n\n");
 
   const vramNote = recommendedVram ? ` (Requirement: ≥${recommendedVram}GB VRAM)` : "";
